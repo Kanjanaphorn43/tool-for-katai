@@ -52,6 +52,9 @@ function copyWithTimestamp(sourcePath: string, destFolder: string) {
 
   const ext = path.extname(sourcePath);
   const fileName = `${timestamp}${ext}`;
+
+  fs.mkdirSync(destFolder, { recursive: true });
+
   const destPath = path.join(destFolder, fileName);
 
   fs.copyFileSync(sourcePath, destPath);

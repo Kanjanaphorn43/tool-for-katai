@@ -1,0 +1,21 @@
+{
+  "name": "tool-for-katai",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "make": "tsx tests/make-test-step.ts",
+    "make-ui": "pnpm exec playwright test --ui"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.12.4",
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.0.1",
+    "exceljs": "^4.4.0",
+    "tsx": "^4.22.4",
+    "xlsx-populate": "^1.21.0"
+  }
+}

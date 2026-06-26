@@ -1,0 +1,183 @@
+import { Page, chromium } from "@playwright/test";
+import fs from "fs";
+import path from "path";
+const XlsxPopulate = require('xlsx-populate');
+
+const FIXED_COUNT_OF_SHEET_ON_TEMPLATE = 13; // จำนวน sheet ที่อยู่ใน template.xlsx ที่ไม่ต้อง copy
+
+const ALL_STYLE_NAMES = [
+  "bold",
+  "italic",
+  "underline",
+  "strikethrough",
+  "subscript",
+  "superscript",
+  "fontSize",
+  "fontFamily",
+  "fontGenericFamily",
+  "fontScheme",
+  "fontColor",
+  "fill",
+  "border",
+  "borderColor",
+  "borderStyle",
+  "diagonalBorderDirection",
+  "diagonalBorderStyle",
+  "diagonalBorderColor",
+  "horizontalAlignment",
+  "justifyLastLine",
+  "indent",
+  "verticalAlignment",
+  "wrapText",
+  "shrinkToFit",
+  "textDirection",
+  "textRotation",
+  "angleTextCounterclockwise",
+  "angleTextClockwise",
+  "rotateTextUp",
+  "rotateTextDown",
+  "verticalText",
+  "numberFormat",
+];
+
+function copyWithTimestamp(sourcePath: string, destFolder: string) {
+  const now = new Date();
+  const timestamp = now
+    .toLocaleString("th-TH", {
+      dateStyle: "short",
+      timeStyle: "medium",
+    })
+    .replace(/\//g, "-")
+    .replace(/:/g, "");
+
+  const ext = path.extname(sourcePath);
+  const fileName = `${timestamp}${ext}`;
+  const destPath = path.join(destFolder, fileName);
+
+  fs.copyFileSync(sourcePath, destPath);
+  console.log(`Copied to: ${destPath}`);
+  return fileName;
+}
+
+async function getDataFromJira(page: Page) {
+  await page.goto("https://m2.material.io/components/data-tables");
+
+  const rows = page.locator("tbody > tr.mdc-data-table__row");
+
+  const data: (string | number)[][] = [];
+
+  for (let i = 0; i < (await rows.count()); i++) {
+    const row = rows.nth(i);
+    const cells = row.locator("td"); // ข้อมูล (td)
+    const cellCount = 3;
+    // const cellCount = await cells.count();
+
+    const rowData: (string | number)[] = [];
+    for (let j = 0; j < cellCount; j++) {
+      if (j === 0) {
+        rowData.push(i + 1); // เพิ่มลำดับที่
+      } else {
+        const text = await cells.nth(j - 1).innerText();
+        rowData.push(text.trim());
+      }
+    }
+    data.push(rowData);
+  }
+
+  console.log("data", data);
+  return data;
+}
+
+function copySheet({
+  workbook,
+  numberSheet,
+}: {
+  workbook: any;
+  numberSheet: number;
+}) {
+  const sourceSheet = workbook.sheet(2);
+  const newSheet = workbook.cloneSheet(
+    sourceSheet,
+    numberSheet.toString(),
+    numberSheet + 1,
+  );
+  newSheet.cell(2, 2).formula(`=TC!B${numberSheet + 4}`);
+  newSheet.cell(2, 3).formula(`=TC!C${numberSheet + 4}`);
+}
+
+function copyRowWithStyle({
+  sheet,
+  sourceRowNum,
+  destRowNum,
+  maxColumns = 3,
+}: {
+  sheet: any;
+  sourceRowNum: number;
+  destRowNum: number;
+  maxColumns?: number;
+}) {
+  const sourceRow = sheet.row(sourceRowNum);
+  const destRow = sheet.row(destRowNum);
+
+  // 1. Copy the row height if it is set
+  if (sourceRow.height()) {
+    destRow.height(sourceRow.height());
+  }
+
+  // 2. Loop through each cell to transfer values and styling
+  for (let colIdx = 1; colIdx <= maxColumns; colIdx++) {
+    const sourceCell = sheet.cell(sourceRowNum, colIdx);
+    const destCell = sheet.cell(destRowNum, colIdx);
+
+    // Copy value
+    destCell.value(sourceCell.value());
+
+    // Extract style properties and apply them to the destination cell
+    const currentStyles = sourceCell.style(ALL_STYLE_NAMES);
+    destCell.style(currentStyles);
+  }
+}
+
+async function writeDataToExcel(filePath: string, data: (string | number)[][]) {
+  const workbook = await XlsxPopulate.fromFileAsync(filePath);
+
+  if (data.length > FIXED_COUNT_OF_SHEET_ON_TEMPLATE) {
+    for (let i = FIXED_COUNT_OF_SHEET_ON_TEMPLATE; i < data.length; i++) {
+      copySheet({ workbook, numberSheet: i + 1 });
+    }
+  }
+
+  const sheet = workbook.sheet(1); // หรือ workbook.sheet("ชื่อ sheet")
+
+  data.forEach((row, rowIndex) => {
+    row.forEach((value, colIndex) => {
+      sheet.cell(rowIndex + 5, colIndex + 1).value(value);
+      if (rowIndex < data.length - 1) {
+        copyRowWithStyle({
+          sheet,
+          sourceRowNum: rowIndex + 5, // Assuming the template starts at row 5
+          destRowNum: rowIndex + 6, // Copy to the next row
+        });
+      }
+    });
+  });
+
+  await workbook.toFileAsync(filePath);
+}
+
+async function main() {
+  const browser = await chromium.launch();
+
+  const page = await browser.newPage();
+
+  const resultFileName = await copyWithTimestamp(
+    "src/Template.xlsx",
+    "src/test-steps",
+  );
+  const data = await getDataFromJira(page);
+  await writeDataToExcel(`src/test-steps/${resultFileName}`, data);
+
+  await browser.close();
+}
+
+main();

@@ -169,18 +169,19 @@ async function writeDataToExcel(filePath: string, data: (string | number)[][]) {
 }
 
 async function main() {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ headless: false });
+  const context = await browser.newContext();
 
-  const page = await browser.newPage();
+  // Tab ที่ 1 (เปิดหน้าแรก)
+  const page1 = await context.newPage();
+  await page1.goto('https://google.com');
 
-  const resultFileName = await copyWithTimestamp(
-    "src/Template.xlsx",
-    "src/test-steps",
-  );
-  const data = await getDataFromJira(page);
-  await writeDataToExcel(`src/test-steps/${resultFileName}`, data);
+  // Tab ที่ 2 (เปิด Tab ใหม่ในหน้าต่างเดิม)
+  const page2 = await context.newPage();
+  await page2.goto('https://playwright.dev');
 
-  await browser.close();
+  // สลับไปควบคุมหน้าจอ Tab แรก หรือ Tab สอง ได้ตามต้องการ
+  await page1.bringToFront()
 }
 
 main();

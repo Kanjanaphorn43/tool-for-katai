@@ -63,8 +63,8 @@ function copyWithTimestamp(sourcePath: string, destFolder: string) {
   return fileName;
 }
 
-async function getDataFromJira({ page, chrome }: { page: Page, chrome: ChildProcess }) {
-  await page.goto("https://cy-autoxjira.atlassian.net/browse/TLMSIT-96507"); // เปลี่ยน URL ให้ตรงกับ Jira ที่ต้องการ
+async function getDataFromJira({ page, chrome, url }: { page: Page, chrome: ChildProcess, url: string }) {
+  await page.goto(url);
 
   await page.waitForTimeout(15000); // รอให้หน้าโหลดข้อมูล
 
@@ -83,7 +83,7 @@ async function getDataFromJira({ page, chrome }: { page: Page, chrome: ChildProc
 
   for (let i = 0; i < rowCount; i++) {
     const row = rows.nth(i);
-    const cells = row.locator("div.zs-grid-body-wrapper > div"); // ข้อมูล (td)
+    const cells = row.locator("div.zs-grid-body-wrapper > div");
     const cellCount = 3;
 
     const rowData: (string | number)[] = [];
@@ -180,6 +180,13 @@ async function writeDataToExcel(filePath: string, data: (string | number)[][]) {
 }
 
 async function main() {
+  const url = process.argv[2];
+
+  if (!url) {
+    console.error("Please provide a Jira URL as a command-line argument.");
+    process.exit(1);
+  }
+
   const chrome = spawn(
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     [
@@ -197,7 +204,7 @@ async function main() {
   const page = context.pages()[0]; // แท็บแรกที่เปิดอยู่
 
   // ดึงข้อมูลจาก Jira
-  const data = await getDataFromJira({ page, chrome });
+  const data = await getDataFromJira({ page, chrome, url });
 
   if (data.length === 0) {
     console.log("No data to write to Excel. Exiting.");

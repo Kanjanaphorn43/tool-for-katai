@@ -196,14 +196,19 @@ async function main() {
   const context = browser.contexts()[0]; // Profile แรกที่เปิดอยู่
   const page = context.pages()[0]; // แท็บแรกที่เปิดอยู่
 
+  // ดึงข้อมูลจาก Jira
+  const data = await getDataFromJira({ page, chrome });
+
+  if (data.length === 0) {
+    console.log("No data to write to Excel. Exiting.");
+    return;
+  }
+
   // คัดลอกไฟล์ Template.xlsx ไปยังโฟลเดอร์ test-steps พร้อมกับ timestamp
   const resultFileName = await copyWithTimestamp(
     "src/Template.xlsx",
     "src/test-steps",
   );
-
-  // ดึงข้อมูลจาก Jira
-  const data = await getDataFromJira({ page, chrome });
 
   // เขียนข้อมูลลงในไฟล์ Excel
   await writeDataToExcel(`src/test-steps/${resultFileName}`, data);

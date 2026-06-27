@@ -66,7 +66,7 @@ function copyWithTimestamp(sourcePath: string, destFolder: string) {
 async function getDataFromJira({ page, chrome }: { page: Page, chrome: ChildProcess }) {
   await page.goto("https://cy-autoxjira.atlassian.net/browse/TLMSIT-96507"); // เปลี่ยน URL ให้ตรงกับ Jira ที่ต้องการ
 
-  await page.waitForTimeout(10000); // รอให้หน้าโหลดข้อมูล
+  await page.waitForTimeout(15000); // รอให้หน้าโหลดข้อมูล
 
   const myIframe = page.frameLocator('iframe[id^="com.thed.zephyr.je__viewissue-teststep-issuecontent-bdd-two"]');
   const rows = myIframe.locator("#ISSUEVIEW_TESTSTEP div.zs-body-container.overflow-y.zs-scroll-grid > div")

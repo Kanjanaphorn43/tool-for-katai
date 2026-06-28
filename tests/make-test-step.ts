@@ -2,6 +2,7 @@ import { Page, chromium } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 const XlsxPopulate = require('xlsx-populate');
+import { ChildProcess, spawn } from "child_process";
 
 const FIXED_COUNT_OF_SHEET_ON_TEMPLATE = 13; // จำนวน sheet ที่อยู่ใน template.xlsx ที่ไม่ต้อง copy
 
@@ -62,25 +63,35 @@ function copyWithTimestamp(sourcePath: string, destFolder: string) {
   return fileName;
 }
 
-async function getDataFromJira(page: Page) {
-  await page.goto("https://m2.material.io/components/data-tables");
+async function getDataFromJira({ page, chrome, url }: { page: Page, chrome: ChildProcess, url: string }) {
+  await page.goto(url);
 
-  const rows = page.locator("tbody > tr.mdc-data-table__row");
+  await page.waitForTimeout(15000); // รอให้หน้าโหลดข้อมูล
+
+  const myIframe = page.frameLocator('iframe[id^="com.thed.zephyr.je__viewissue-teststep-issuecontent-bdd-two"]');
+  const rows = myIframe.locator("#ISSUEVIEW_TESTSTEP div.zs-body-container.overflow-y.zs-scroll-grid > div")
+  const rowCount = await rows.count() - 1;
+  console.log("rows count", rowCount);
+
+  if (rowCount <= 0) {
+    console.log("No data found in Jira test steps.");
+    chrome.kill();
+    return [];
+  }
 
   const data: (string | number)[][] = [];
 
-  for (let i = 0; i < (await rows.count()); i++) {
+  for (let i = 0; i < rowCount; i++) {
     const row = rows.nth(i);
-    const cells = row.locator("td"); // ข้อมูล (td)
+    const cells = row.locator("div.zs-grid-body-wrapper > div");
     const cellCount = 3;
-    // const cellCount = await cells.count();
 
     const rowData: (string | number)[] = [];
     for (let j = 0; j < cellCount; j++) {
       if (j === 0) {
         rowData.push(i + 1); // เพิ่มลำดับที่
       } else {
-        const text = await cells.nth(j - 1).innerText();
+        const text = await cells.nth(j + 1).innerText();
         rowData.push(text.trim());
       }
     }
@@ -169,19 +180,47 @@ async function writeDataToExcel(filePath: string, data: (string | number)[][]) {
 }
 
 async function main() {
-  const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext();
+  const url = process.argv[2];
 
-  // Tab ที่ 1 (เปิดหน้าแรก)
-  const page1 = await context.newPage();
-  await page1.goto('https://google.com');
+  if (!url) {
+    console.error("Please provide a Jira URL as a command-line argument.");
+    process.exit(1);
+  }
 
-  // Tab ที่ 2 (เปิด Tab ใหม่ในหน้าต่างเดิม)
-  const page2 = await context.newPage();
-  await page2.goto('https://playwright.dev');
+  const chrome = spawn(
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    [
+      "--remote-debugging-port=9222",
+      `--user-data-dir=C:\\temp\\playwright-profile`,
+    ],
+    { detached: true, stdio: "ignore" }
+  );
 
-  // สลับไปควบคุมหน้าจอ Tab แรก หรือ Tab สอง ได้ตามต้องการ
-  await page1.bringToFront()
+  // รอ Chrome เปิด
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  const browser = await chromium.connectOverCDP("http://127.0.0.1:9222");
+
+  const context = browser.contexts()[0]; // Profile แรกที่เปิดอยู่
+  const page = context.pages()[0]; // แท็บแรกที่เปิดอยู่
+
+  // ดึงข้อมูลจาก Jira
+  const data = await getDataFromJira({ page, chrome, url });
+
+  if (data.length === 0) {
+    console.log("No data to write to Excel. Exiting.");
+    return;
+  }
+
+  // คัดลอกไฟล์ Template.xlsx ไปยังโฟลเดอร์ test-steps พร้อมกับ timestamp
+  const resultFileName = await copyWithTimestamp(
+    "src/Template.xlsx",
+    "src/test-steps",
+  );
+
+  // เขียนข้อมูลลงในไฟล์ Excel
+  await writeDataToExcel(`src/test-steps/${resultFileName}`, data);
+
+  chrome.kill(); // ปิด Chrome หลังจากทำงานเสร็จ
 }
 
 main();

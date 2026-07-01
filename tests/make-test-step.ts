@@ -116,6 +116,7 @@ function copySheet({
     numberSheet.toString(),
     numberSheet + 1,
   );
+  newSheet.cell(2, 1).formula(`=TC!A${numberSheet + 4}`);
   newSheet.cell(2, 2).formula(`=TC!B${numberSheet + 4}`);
   newSheet.cell(2, 3).formula(`=TC!C${numberSheet + 4}`);
 }

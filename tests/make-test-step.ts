@@ -75,6 +75,7 @@ async function getDataFromJira({ page, chrome, url }: { page: Page, chrome: Chil
 
   if (rowCount <= 0) {
     console.log("No data found in Jira test steps.");
+    discordWebhookNotification("⚠️ No data found in Jira test steps. Please check the Jira URL or the test steps content.");
     chrome.kill();
     return [];
   }
@@ -220,7 +221,29 @@ async function main() {
   // เขียนข้อมูลลงในไฟล์ Excel
   await writeDataToExcel(`src/test-steps/${resultFileName}`, data);
 
+  discordWebhookNotification(`✅ Test steps have been successfully generated and saved as ${resultFileName}.`);
   chrome.kill(); // ปิด Chrome หลังจากทำงานเสร็จ
+}
+
+async function discordWebhookNotification(message: string) {
+  const webhookUrl =
+    "https://discord.com/api/webhooks/1521846112540164236/sirxNi0LgjoEcpAkX8K0FsKnhwsHDjrDjHIDvQmhtHRBJji3BUnkRNBp4-AQmrZ9Ncc1";
+  const payload = {
+    content: message,
+  };
+
+  try {
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    console.log("Discord notification sent successfully.");
+  } catch (error) {
+    console.error("Error sending Discord notification:", error);
+  }
 }
 
 main();

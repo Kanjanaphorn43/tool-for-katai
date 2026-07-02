@@ -1,7 +1,7 @@
 import { Page, chromium } from "@playwright/test";
 import fs from "fs";
 import path from "path";
-const XlsxPopulate = require('xlsx-populate');
+const XlsxPopulate = require("xlsx-populate");
 import { ChildProcess, spawn } from "child_process";
 
 const FIXED_COUNT_OF_SHEET_ON_TEMPLATE = 13; // จำนวน sheet ที่อยู่ใน template.xlsx ที่ไม่ต้อง copy
@@ -63,44 +63,62 @@ function copyWithTimestamp(sourcePath: string, destFolder: string) {
   return fileName;
 }
 
-async function getDataFromJira({ page, chrome, url }: { page: Page, chrome: ChildProcess, url: string }) {
+async function getDataFromJira({
+  page,
+  chrome,
+  url,
+  onlyLogin,
+}: {
+  page: Page;
+  chrome: ChildProcess;
+  url: string;
+  onlyLogin: boolean;
+}) {
   await page.goto(url);
 
-  await page.waitForTimeout(15000); // รอให้หน้าโหลดข้อมูล
+  if (!onlyLogin) {
+    await page.waitForTimeout(15000); // รอให้หน้าโหลดข้อมูล
 
-  const myIframe = page.frameLocator('iframe[id^="com.thed.zephyr.je__viewissue-teststep-issuecontent-bdd-two"]');
-  const rows = myIframe.locator("#ISSUEVIEW_TESTSTEP div.zs-body-container.overflow-y.zs-scroll-grid > div")
-  const rowCount = await rows.count() - 1;
-  console.log("rows count", rowCount);
+    const myIframe = page.frameLocator(
+      'iframe[id^="com.thed.zephyr.je__viewissue-teststep-issuecontent-bdd-two"]',
+    );
+    const rows = myIframe.locator(
+      "#ISSUEVIEW_TESTSTEP div.zs-body-container.overflow-y.zs-scroll-grid > div",
+    );
+    const rowCount = (await rows.count()) - 1;
+    console.log("rows count", rowCount);
 
-  if (rowCount <= 0) {
-    console.log("No data found in Jira test steps.");
-    discordWebhookNotification("⚠️ No data found in Jira test steps. Please check the Jira URL or the test steps content.");
-    chrome.kill();
-    return [];
-  }
-
-  const data: (string | number)[][] = [];
-
-  for (let i = 0; i < rowCount; i++) {
-    const row = rows.nth(i);
-    const cells = row.locator("div.zs-grid-body-wrapper > div");
-    const cellCount = 3;
-
-    const rowData: (string | number)[] = [];
-    for (let j = 0; j < cellCount; j++) {
-      if (j === 0) {
-        rowData.push(i + 1); // เพิ่มลำดับที่
-      } else {
-        const text = await cells.nth(j + 1).innerText();
-        rowData.push(text.trim());
-      }
+    if (rowCount <= 0) {
+      console.log("No data found in Jira test steps.");
+      discordWebhookNotification(
+        "⚠️ No data found in Jira test steps. Please check the Jira URL or the test steps content.",
+      );
+      chrome.kill();
+      return [];
     }
-    data.push(rowData);
-  }
 
-  console.log("data", data);
-  return data;
+    const data: (string | number)[][] = [];
+
+    for (let i = 0; i < rowCount; i++) {
+      const row = rows.nth(i);
+      const cells = row.locator("div.zs-grid-body-wrapper > div");
+      const cellCount = 3;
+
+      const rowData: (string | number)[] = [];
+      for (let j = 0; j < cellCount; j++) {
+        if (j === 0) {
+          rowData.push(i + 1); // เพิ่มลำดับที่
+        } else {
+          const text = await cells.nth(j + 1).innerText();
+          rowData.push(text.trim());
+        }
+      }
+      data.push(rowData);
+    }
+
+    console.log("data", data);
+    return data;
+  }
 }
 
 function copySheet({
@@ -183,6 +201,7 @@ async function writeDataToExcel(filePath: string, data: (string | number)[][]) {
 
 async function main() {
   const url = process.argv[2];
+  const onlyLogin = process.argv.includes("--only-login");
 
   if (!url) {
     console.error("Please provide a Jira URL as a command-line argument.");
@@ -195,7 +214,7 @@ async function main() {
       "--remote-debugging-port=9222",
       `--user-data-dir=C:\\temp\\playwright-profile`,
     ],
-    { detached: true, stdio: "ignore" }
+    { detached: true, stdio: "ignore" },
   );
 
   // รอ Chrome เปิด
@@ -206,24 +225,28 @@ async function main() {
   const page = context.pages()[0]; // แท็บแรกที่เปิดอยู่
 
   // ดึงข้อมูลจาก Jira
-  const data = await getDataFromJira({ page, chrome, url });
+  const data = await getDataFromJira({ page, chrome, url, onlyLogin });
 
-  if (data.length === 0) {
-    console.log("No data to write to Excel. Exiting.");
-    return;
+  if (!onlyLogin) {
+    if (data?.length === 0) {
+      console.log("No data to write to Excel. Exiting.");
+      return;
+    }
+
+    // คัดลอกไฟล์ Template.xlsx ไปยังโฟลเดอร์ test-steps พร้อมกับ timestamp
+    const resultFileName = await copyWithTimestamp(
+      "src/Template.xlsx",
+      "src/test-steps",
+    );
+
+    // เขียนข้อมูลลงในไฟล์ Excel
+    await writeDataToExcel(`src/test-steps/${resultFileName}`, data || []);
+
+    discordWebhookNotification(
+      `✅ Test steps have been successfully generated and saved as ${resultFileName}.`,
+    );
+    chrome.kill(); // ปิด Chrome หลังจากทำงานเสร็จ
   }
-
-  // คัดลอกไฟล์ Template.xlsx ไปยังโฟลเดอร์ test-steps พร้อมกับ timestamp
-  const resultFileName = await copyWithTimestamp(
-    "src/Template.xlsx",
-    "src/test-steps",
-  );
-
-  // เขียนข้อมูลลงในไฟล์ Excel
-  await writeDataToExcel(`src/test-steps/${resultFileName}`, data);
-
-  discordWebhookNotification(`✅ Test steps have been successfully generated and saved as ${resultFileName}.`);
-  chrome.kill(); // ปิด Chrome หลังจากทำงานเสร็จ
 }
 
 async function discordWebhookNotification(message: string) {
